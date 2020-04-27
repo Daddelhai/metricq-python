@@ -39,12 +39,12 @@ jobs:
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         max-errors: 1
-        paths: python/metricq
+        paths: metricq
 
   release:
     needs: [build]
     runs-on: ubuntu-latest
-    
+
     steps:
     - uses: actions/checkout@v2
     - name: Set up Python 3.6
@@ -64,7 +64,7 @@ jobs:
       uses: actions/upload-artifact@v1
       with:
         name: distribution-packages
-        path: dist/  
+        path: dist/
     - name: Publish a Python distribution to PyPI
       if: github.event_name == 'push' && startsWith(github.event.ref, 'refs/tags/v')
       uses: pypa/gh-action-pypi-publish@master
