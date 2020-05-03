@@ -105,7 +105,12 @@ setup(
         "setuptools",
     ],
     extras_require={
-        "examples": ["aiomonitor", "click", "click-log", "click-completion"]
+        "examples": ["aiomonitor", "click", "click-log", "click-completion"],
+        "docs": [
+            "sphinx~=3.0",
+            "sphinx_rtd_theme~=0.4.3",
+            "sphinx_autodoc_typehints~=1.10",
+        ],
     },
     cmdclass={"build_py": ProtoBuildPy, "develop": ProtoDevelop},
     package_dir={"metricq_proto": "lib/metricq-protobuf"},
