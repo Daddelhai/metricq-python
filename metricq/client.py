@@ -54,6 +54,8 @@ class Client(Agent):
         return "client-" + self.token
 
     async def connect(self):
+        """Connect to the MetricQ network
+        """
         await super().connect()
 
         self._management_broadcast_exchange = await self._management_channel.declare_exchange(
