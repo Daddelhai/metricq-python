@@ -28,7 +28,7 @@
 
 import asyncio
 from abc import abstractmethod
-from typing import Optional
+from typing import Optional, Union
 
 from .logging import get_logger
 from .source import Source
@@ -38,13 +38,59 @@ logger = get_logger(__name__)
 
 
 class IntervalSource(Source):
-    def __init__(self, *args, period=None, **kwargs):
-        """
-        :param period: in seconds
-        """
+    """A :term:`Source` producing metrics at regular intervals of time.
+
+    Use an :class:`IntervalSource` if you want to produce data points at a constant rate,
+    without having to worry about getting the timing right.
+    Put your code producing data points into :meth:`update`, which gets called
+    at the specified intervals.
+
+    The :class:`IntervalSource` handles missed deadlines for you:
+    If the code in :meth:`update` takes longer than :attr:`period` to execute,
+    it will skip the next updates until it caught up, otherwise keeping a
+    constant update rate.
+
+
+    Keyword Args:
+        period: time between consecutive updates, in number of seconds or as :class:`Timedelta`
+
+    Example:
+        Sending an incrementing counter once a second::
+
+            class Counter(IntervalSource):
+                def __init__(self, *args, **kwargs):
+                    super().__init__(*args, period=Timedelta.from_s(1), **kwargs)
+                    self.counter = 0
+
+                async def update(self):
+                    self.send("example.counter", time=Timestamp.now(), value=self.counter)
+                    self.counter += 1
+    """
+
+    def __init__(
+        self, *args, period: Union[int, float, Timedelta, None] = None, **kwargs
+    ):
         super().__init__(*args, **kwargs)
+        self._period: Optional[Timedelta]
         self.period = period
         self._interval_task_stop_future = None
+
+    @property
+    def period(self) -> Optional[float]:
+        """Time interval (in seconds) at which :meth:`update` is called.
+        """
+        if self._period is None:
+            return None
+        return self._period.s
+
+    @period.setter
+    def period(self, duration: Union[int, float, Timedelta]):
+        """Foo
+        """
+        if isinstance(duration, Timedelta):
+            self._period = duration
+        else:
+            self._period = Timedelta.from_s(duration)
 
     async def task(self):
         self._interval_task_stop_future = self.event_loop.create_future()
@@ -52,15 +98,15 @@ class IntervalSource(Source):
         while True:
             await self.update()
             try:
-                if self.period is None:
+                if self._period is None:
                     raise ValueError(
                         "IntervalSource.period not set before running task"
                     )
-                deadline += Timedelta.from_s(self.period)
+                deadline += self._period
                 now = Timestamp.now()
                 while now >= deadline:
                     logger.warn("Missed deadline {}, it is now {}", deadline, now)
-                    deadline += Timedelta.from_s(self.period)
+                    deadline += self._period
 
                 timeout = (deadline - now).s
                 await asyncio.wait_for(
@@ -81,4 +127,8 @@ class IntervalSource(Source):
 
     @abstractmethod
     async def update(self):
+        """A user-provided method called at intervals given by :attr:`period`.
+
+        Override this method to produce data points at a constant rate.
+        """
         pass
