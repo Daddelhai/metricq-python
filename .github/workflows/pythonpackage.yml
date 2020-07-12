@@ -101,7 +101,7 @@ jobs:
         pip install wheel
         pip install '.[docs]'
     - name: Build documentation
-      run: python setup.py build_sphinx -E
+      run: python setup.py build_py build_sphinx --fresh-env --nitpicky
     - name: Upload generated HTML as build artifact
       uses: actions/upload-artifact@v2
       with:
