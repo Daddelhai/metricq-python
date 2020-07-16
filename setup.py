@@ -105,7 +105,12 @@ setup(
         "setuptools",
     ],
     extras_require={
-        "examples": ["aiomonitor", "click", "click-log", "click-completion"]
+        "examples": ["aiomonitor", "click", "click-log", "click-completion"],
+        "tools": [
+            "click",
+            "click_log",
+            "click-completion",
+        ],
     },
     cmdclass={"build_py": ProtoBuildPy, "develop": ProtoDevelop},
     package_dir={"metricq_proto": "lib/metricq-protobuf"},
