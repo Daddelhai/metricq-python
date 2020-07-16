@@ -110,6 +110,8 @@ setup(
             "click",
             "click_log",
             "click-completion",
+            "humanize~=2.5",
+            "python-dateutil~=2.8",
         ],
     },
     cmdclass={"build_py": ProtoBuildPy, "develop": ProtoDevelop},

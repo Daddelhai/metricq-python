@@ -28,15 +28,20 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import asyncio
+import datetime
 import logging
+from typing import Optional
 
 import aio_pika
-
 import click
 import click_completion
 import click_log
+import humanize
+from dateutil.parser import isoparse as parse_iso_datetime
+from dateutil.tz import tzlocal
 
 import metricq
+from metricq.types import Timedelta
 
 logger = metricq.get_logger()
 logger.setLevel(logging.WARN)
@@ -48,9 +53,86 @@ logger.handlers[0].formatter = logging.Formatter(
 click_completion.init()
 
 
+class DiscoverResponse:
+    def __init__(
+        self,
+        alive: bool = True,
+        current_time: Optional[str] = None,
+        starting_time: Optional[str] = None,
+        uptime: Optional[int] = None,
+        metricq_version: Optional[str] = None,
+        hostname: Optional[str] = None,
+    ):
+        self.alive = alive
+        self.metricq_version = metricq_version
+        self.hostname = hostname
+
+        self.current_time = self._parse_datetime(current_time)
+        self.starting_time = self._parse_datetime(starting_time)
+        self.uptime: Optional[datetime.timedelta] = None
+
+        try:
+            if uptime is None:
+                self.uptime = self.current_time - self.starting_time
+            else:
+                self.uptime = (
+                    datetime.timedelta(seconds=uptime)
+                    if uptime < 1e9
+                    else datetime.timedelta(microseconds=int(uptime // 1e3))
+                )
+        except (ValueError, TypeError):
+            pass
+
+    @classmethod
+    def _parse_datetime(cls, iso_string) -> Optional[datetime.datetime]:
+        if iso_string is None:
+            return None
+        else:
+            try:
+                dt = parse_iso_datetime(iso_string)
+                return dt.astimezone(tzlocal()).replace(tzinfo=None)
+            except (AttributeError, ValueError, TypeError, OverflowError) as e:
+                logger.warning("Failed to parse ISO datestring ({}): {}", iso_string, e)
+                return None
+
+    def _fmt_parts(self):
+        unknown_color = "bright_white"
+
+        yield (
+            click.style("✔️", fg="green") if self.alive else click.style("❌", fg="red")
+        )
+
+        try:
+            yield f"up for {humanize.naturaldelta(self.uptime)}"
+        except Exception:
+            yield click.style("unknown uptime", fg=unknown_color)
+
+        try:
+            yield f"(started {humanize.naturalday(self.starting_time)})"
+        except Exception as e:
+            logger.warning(
+                "Failed to convert {} to naturaltime: {}", self.starting_time, e
+            )
+
+        if self.metricq_version:
+            yield f"running {self.metricq_version}"
+
+        if self.hostname:
+            yield f"on {self.hostname}"
+
+    def __str__(self):
+        return " ".join(self._fmt_parts())
+
+
+def echo_status(token: str, msg: str):
+    click.echo(f'{click.style(token, fg="cyan")}: {msg}')
+
+
 class MetricQDiscover(metricq.Agent):
-    def __init__(self, server):
+    def __init__(self, server, timeout: Timedelta, ignore_events):
         super().__init__("discover", server, add_uuid=True)
+        self.timeout = timeout
+        self.ignore_events = set(ignore_events)
 
     async def discover(self):
         await self.connect()
@@ -70,65 +152,46 @@ class MetricQDiscover(metricq.Agent):
             cleanup_on_response=False,
         )
 
-        await asyncio.sleep(30)
+        await asyncio.sleep(self.timeout.s)
 
     def on_discover(self, from_token, **kwargs):
-        if "error" in kwargs:
-            logger.warning(
-                "Agent '{}' failed to properly respond to discover: {}",
-                from_token,
-                kwargs["error"],
-            )
-            return
+        error = kwargs.get("error")
+        if error is not None:
+            if "error-responses" not in self.ignore_events:
+                status = click.style("⚠", fg="yellow")
+                echo_status(
+                    from_token, f"{status} response indicated an error: {error}"
+                )
+        else:
+            self.pretty_print(from_token, response=kwargs)
 
-        try:
-            alive = kwargs["alive"]
-        except KeyError:
-            logger.warning(
-                f"Agent '{from_token}' misses 'alive' attribute in discover response"
-            )
-            alive = True
-
-        try:
-            startingTime = kwargs["startingTime"]
-        except KeyError:
-            logger.warning(
-                f"Agent '{from_token}' misses 'startingTime' attribute in discover response"
-            )
-            startingTime = "some time in the past"
-
-        try:
-            if kwargs["uptime"] >= 1e9:
-                uptime = int(kwargs["uptime"] // 1e9)
-            else:
-                uptime = int(kwargs["uptime"])
-        except KeyError:
-            uptime = "a lot of"
-
-        try:
-            version = kwargs["version"]
-        except KeyError:
-            version = ""
-
-        try:
-            metricq_version = "@{}".format(kwargs["metricqVersion"])
-        except KeyError:
-            metricq_version = ""
-
-        click.echo(click.style(from_token, fg="cyan"), nl=False)
-        alive = "✔️" if alive else "❌"
-        click.echo(
-            f": {alive} since {startingTime} (up for {uptime} seconds) {version}",
-            nl=False,
+    def pretty_print(self, from_token, response: dict):
+        logger.debug("response: {}", response)
+        response = DiscoverResponse(
+            alive=response.get("alive"),
+            starting_time=response.get("startingTime"),
+            current_time=response.get("currentTime"),
+            uptime=response.get("uptime"),
+            metricq_version=response.get("metricqVersion"),
+            hostname=response.get("hostname"),
         )
-        click.echo(click.style(metricq_version, fg="red"))
+
+        echo_status(from_token, str(response))
 
 
 @click.command()
 @click_log.simple_verbosity_option(logger)
 @click.option("--server", default="amqp://localhost/")
-def discover_command(server):
-    d = MetricQDiscover(server)
+@click.option("-t", "--timeout", default="30s")
+@click.option(
+    "--ignore",
+    type=click.Choice(["error-responses"], case_sensitive=False),
+    multiple=True,
+)
+def discover_command(server, timeout: str, ignore):
+    d = MetricQDiscover(
+        server, timeout=Timedelta.from_string(timeout), ignore_events=ignore
+    )
 
     asyncio.run(d.discover())
 
