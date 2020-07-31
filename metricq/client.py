@@ -121,7 +121,9 @@ class Client(Agent):
         :param limit: limit the number of results to return
         :return: either a {name: metadata} dict (metadata=True) or a list of metric names (metadata=False)
         """
-        arguments: Dict[str, Union[str, Sequence[str], bool, float]] = {"format": "object" if metadata else "array"}
+        arguments: Dict[str, Union[str, Sequence[str], bool, float]] = {
+            "format": "object" if metadata else "array"
+        }
         if selector is not None:
             arguments["selector"] = selector
         if timeout is not None:

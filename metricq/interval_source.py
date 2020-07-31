@@ -70,7 +70,7 @@ class IntervalSource(Source):
                 logger.info("stopping IntervalSource task")
                 break
             except asyncio.TimeoutError:
-                # This is the normal case, just continue with the loop
+                # This is the normal case, just continue with the  loop
                 continue
 
     async def stop(self, exception: Optional[Exception] = None):
