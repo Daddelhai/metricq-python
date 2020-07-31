@@ -96,6 +96,11 @@ def make_proto(command):
 
     protoc = find_protoc()
 
+    try:
+        import mypy_protobuf
+    except ImportError:
+        mypy_protobuf = None
+
     protobuf_file_generated = False
 
     for proto_file in proto_files:
@@ -106,13 +111,18 @@ def make_proto(command):
             out_file
         ):
             sys.stderr.write("[protobuf] {} -> {}\n".format(source, out_dir))
-            subprocess.check_call(
-                [
+            protoc_call_args = [
                     protoc,
                     "--proto_path=" + proto_dir,
-                    "--python_out=" + out_dir,
-                    os.path.join(proto_dir, proto_file),
-                ]
+                    "--python_out=" + out_dir
+            ]
+            if mypy_protobuf:
+                    protoc_call_args.append("--mypy_out=" + out_dir)
+
+            protoc_call_args.append(os.path.join(proto_dir, proto_file))
+
+            subprocess.check_call(
+                protoc_call_args
             )
             protobuf_file_generated = True
 
@@ -164,7 +174,8 @@ setup(
         "setuptools",
     ],
     extras_require={
-        "examples": ["aiomonitor", "click", "click-log", "click-completion"]
+        "examples": ["aiomonitor", "click", "click-log", "click-completion"],
+        "typing": ["mypy-protobuf"]
     },
     cmdclass={"build_py": ProtoBuildPy, "develop": ProtoDevelop},
     package_dir={"metricq_proto": "lib/metricq-protobuf"},
