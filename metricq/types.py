@@ -30,6 +30,7 @@
 
 import datetime
 import re
+from dataclasses import dataclass
 from functools import total_ordering
 from numbers import Number
 from typing import NamedTuple, Union
@@ -247,12 +248,26 @@ class Timestamp:
         return str(self.posix_ns)
 
 
-class TimeValue(NamedTuple):
+@dataclass(frozen=True)
+class TimeValue:
+    __slots__ = ("timestamp", "value")
+
     timestamp: Timestamp
     value: float
 
 
-class TimeAggregate(NamedTuple):
+@dataclass(frozen=True)
+class TimeAggregate:
+    __slots__ = (
+        "timestamp",
+        "minimum",
+        "maximum",
+        "sum",
+        "count",
+        "integral",
+        "active_time",
+    )
+
     timestamp: Timestamp
     minimum: float
     maximum: float
